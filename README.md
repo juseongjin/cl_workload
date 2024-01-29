@@ -58,6 +58,10 @@ $ ./matrix_multiply <duration> 0 <GPU thread num> 0
 ![Screenshot from 2024-01-29 15-39-06](https://github.com/juseongjin/cl_workload/assets/49185122/a1aea496-5835-49ad-8fdb-f687833571a5)
 
 ## Considering
-In matrix_multiply.cc file, GPU_MAT_SIZE is a kernel size. Matrix size = GPU_MAT_SIZE * GPU_MAT_SIZE
-If you want to increase GPU contention, you have to change to GPU_MAT_SIZE.
-The GPU_MAT_SIZE must be <=(under) 512. Because, GPU_MAT_SIZE > 512 cause overflow and GPU calculation error.
+In matrix_multiply.cc file, GPU_MAT_SIZE is a kernel size. (Matrix size = GPU_MAT_SIZE * GPU_MAT_SIZE)
+
+If you want to increase GPU contention, you can change the GPU_MAT_SIZE.
+
+<u>But, the GPU_MAT_SIZE must be <=(under) 512.</u>
+
+Because, GPU_MAT_SIZE > 512 cause overflow and GPU calculation error.
