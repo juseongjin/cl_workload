@@ -19,7 +19,6 @@ class Workload {
   ~Workload();
 
   void GPU_Worker();
-  void CPU_Worker();
 
   struct timespec start_time;
   bool ignition = false;
@@ -31,8 +30,4 @@ class Workload {
  private:
   // GPU workload pool
   std::vector<std::thread> gpu_workload_pool;
-
-  // CPU workload pool
-  std::vector<std::thread> cpu_workload_pool;
-
 };  // class Workload

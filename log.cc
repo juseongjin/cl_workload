@@ -2,13 +2,12 @@
 
 #define GPU_MAT_SIZE 128
 #define GPU_LOCAL_SIZE 8
-#define PERIOD 20
-// 10Hz -> 100,50Hz -> 20, 100Hz -> 10
-#define need_period
-//  512 (512/16 = 32, 0.66031650083s) (512/8 = 64, 0.11224315321s)->4.196719s
-//  (512/2=256, 0.30318202489s) 256 (256/16 = 16, 0.01193838276s) (256/8 = 32,
-//  0.01371627267s)->1.047494s (256/1=256, 0.04231647603s) 128 (128/16 = 8 ,
-//  0.00180587449s) (128/8 = 16, 0.00189148828s)->0.626098s
+#define PERIOD 30
+//#define need_period
+// 512 (512/16 = 32, 0.66031650083s) (512/8 = 64, 0.11224315321s)->4.196719s
+// (512/2=256, 0.30318202489s) 256 (256/16 = 16, 0.01193838276s) (256/8 = 32,
+// 0.01371627267s)->1.047494s (256/1=256, 0.04231647603s) 128 (128/16 = 8 ,
+// 0.00180587449s) (128/8 = 16, 0.00189148828s)->0.626098s
 
 const char* kernelSource = R"(
     __kernel void matrixMultiply(__global float* A, __global float* B,
@@ -79,9 +78,12 @@ void CPU_multipy(std::vector<float> matA, std::vector<float> matB) {
 
 void Workload::GPU_Worker() {
   int count = 1;
-  double elapsed_t, total_elapsed_t = 0;
+  double elapsed_t, total_elapsed_t = 0, cpt_avg = 0, run_avg = 0, cpf_avg = 0,
+                    fsh_avg = 0;
   struct timespec begin, end;
   int idx;
+  std::vector<float> log;
+  std::string file_name = "latency.txt";
 
   // Set up OpenCL context, device, and queue
   std::vector<cl::Platform> platforms;
@@ -172,10 +174,17 @@ void Workload::GPU_Worker() {
     if (event == nullptr) {
       event = new cl::Event();
     }
+    clock_gettime(CLOCK_MONOTONIC, &begin);
     void* mapped_ptr_A = queue.enqueueMapBuffer(
         bufferA, CL_TRUE, CL_MAP_WRITE, 0, sizeof(float) * matrixElements);
     void* mapped_ptr_B = queue.enqueueMapBuffer(
         bufferB, CL_TRUE, CL_MAP_WRITE, 0, sizeof(float) * matrixElements);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed_t = (end.tv_sec - begin.tv_sec) +
+                ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
+    printf("%d's CPT: %.11f | ", count, elapsed_t);
+    cpt_avg += elapsed_t;
+    total_elapsed_t += elapsed_t;
 
 #ifdef need_period
     std::this_thread::sleep_for(std::chrono::milliseconds(PERIOD));
@@ -189,19 +198,41 @@ void Workload::GPU_Worker() {
     queue.enqueueNDRangeKernel(
         kernel, cl::NullRange, cl::NDRange(GPU_MAT_SIZE, GPU_MAT_SIZE),
         cl::NDRange(GPU_LOCAL_SIZE, GPU_LOCAL_SIZE), NULL, event);
+    // queue.enqueueNDRangeKernel(kernel, cl::NullRange,
+    //                            cl::NDRange(GPU_MAT_SIZE, GPU_MAT_SIZE),
+    //                            cl::NullRange);
+    // queue.flush();
+    // cl_event wait_event = (*event)();
+    // clWaitForEvents(1, &wait_event);
     queue.finish();
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_t = (end.tv_sec - begin.tv_sec) +
                 ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
+    printf("RUNNING: %.11f | ", elapsed_t);
+    run_avg += elapsed_t;
     total_elapsed_t += elapsed_t;
-    printf("%d's time: %.11f\n", count, elapsed_t);
+
+    clock_gettime(CLOCK_MONOTONIC, &begin);
     queue.enqueueReadBuffer(bufferResult, CL_TRUE, 0,
                             sizeof(float) * matrixElements,
                             resultMatrix.data());
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed_t = (end.tv_sec - begin.tv_sec) +
+                ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
+    printf("CPF: %.11f | ", elapsed_t);
+    cpf_avg += elapsed_t;
+    total_elapsed_t += elapsed_t;
 
     // // 매핑 해제
+    clock_gettime(CLOCK_MONOTONIC, &begin);
     queue.enqueueUnmapMemObject(bufferA, mapped_ptr_A);
     queue.enqueueUnmapMemObject(bufferB, mapped_ptr_B);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    elapsed_t = (end.tv_sec - begin.tv_sec) +
+                ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
+    printf("FLUSH: %.11f | \n", elapsed_t);
+    fsh_avg += elapsed_t;
+    total_elapsed_t += elapsed_t;
 
     // For Verification
     // std::cout << std::fixed;
@@ -211,19 +242,41 @@ void Workload::GPU_Worker() {
     //   std::cout << resultMatrix[i] << " ";
     // }
     // std::cout << "\n";
-    // for (idx = 0; idx < GPU_MAT_SIZE; idx++) {
-    //  if (matC[idx] != resultMatrix[idx]) {
-    //    printf("Verification failed!\n");
-    //    break;
-    //  }
-    //}
+    for (idx = 0; idx < GPU_MAT_SIZE; idx++) {
+      if (matC[idx] != resultMatrix[idx]) {
+        printf("Verification failed!\n");
+        break;
+      }
+    }
+    // printf("\033[0;31m%d's average Elapsed time: %.11fs\033[0m\n", count,
+    //        total_elapsed_t / (count));
     count++;
   }
-  printf("%d's average time: %.11f\n", count - 1,
-         total_elapsed_t / (count - 1));
   if (idx == GPU_MAT_SIZE) {
     printf("Verification success!\n");
   }
+  log.push_back(count - 1);
+  log.push_back(GPU_MAT_SIZE);
+  log.push_back(cpt_avg / (count - 1));
+  log.push_back(run_avg / (count - 1));
+  log.push_back(cpf_avg / (count - 1));
+  log.push_back(fsh_avg / (count - 1));
+  log.push_back(total_elapsed_t / (count - 1));
+
+  std::ofstream outfile(file_name, std::ios::app);
+
+  if (!outfile.is_open()) {
+    std::cerr << "Failed to open " << file_name << std::endl;
+    return;
+  }
+
+  for (int i = 0; i < log.size(); i++) {
+    if (i > 1) outfile << std::fixed << std::setprecision(11);
+    outfile << log[i] << " | ";
+  }
+  outfile << std::endl;
+  // Close the file
+  outfile.close();
 }
 
 Workload::~Workload(){};
