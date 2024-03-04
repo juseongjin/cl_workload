@@ -82,6 +82,7 @@ void Workload::GPU_Worker() {
   double elapsed_t, total_elapsed_t = 0;
   struct timespec begin, end;
   int idx;
+  std::string file_name = "latency.txt";
 
   // Set up OpenCL context, device, and queue
   std::vector<cl::Platform> platforms;
@@ -217,6 +218,16 @@ void Workload::GPU_Worker() {
     //    break;
     //  }
     //}
+    std::ofstream outfile(file_name);
+
+    if (!outfile.is_open()) {
+      std::cerr << "Failed to open " << file_name << std::endl;
+      return;
+    }
+
+    outfile << std::fixed << std::setprecision(11);
+    outfile << elapsed_t;
+    // outfile << std::endl;
     count++;
   }
   printf("%d's average time: %.11f\n", count - 1,
