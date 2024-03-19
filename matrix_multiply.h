@@ -10,6 +10,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <cstdlib>
+#include <signal.h>
 
 class Workload {
  public:

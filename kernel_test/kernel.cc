@@ -1,6 +1,6 @@
 #include "matrix_multiply.h"
 
-#define GPU_MAT_SIZE 128
+#define GPU_MAT_SIZE 256
 #define GPU_LOCAL_SIZE 8
 // #define PERIOD 30
 // #define need_period
@@ -134,7 +134,7 @@ void Workload::GPU_Worker() {
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_t = (end.tv_sec - begin.tv_sec) +
                 ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
-    //printf("%d's CPT: %.11f | ", count, elapsed_t);
+    // printf("%d's CPT: %.11f | ", count, elapsed_t);
     cpt_avg += elapsed_t;
     total_elapsed_t += elapsed_t;
 
@@ -152,7 +152,7 @@ void Workload::GPU_Worker() {
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_t = (end.tv_sec - begin.tv_sec) +
                 ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
-    //printf("RUNNING: %.11f | ", elapsed_t);
+    // printf("RUNNING: %.11f | ", elapsed_t);
     run_avg += elapsed_t;
     total_elapsed_t += elapsed_t;
 
@@ -163,7 +163,7 @@ void Workload::GPU_Worker() {
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_t = (end.tv_sec - begin.tv_sec) +
                 ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
-    //printf("CPF: %.11f | ", elapsed_t);
+    // printf("CPF: %.11f | ", elapsed_t);
     cpf_avg += elapsed_t;
     total_elapsed_t += elapsed_t;
 
@@ -173,7 +173,7 @@ void Workload::GPU_Worker() {
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_t = (end.tv_sec - begin.tv_sec) +
                 ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
-    //printf("FLUSH: %.11f\n", elapsed_t);
+    // printf("FLUSH: %.11f\n", elapsed_t);
     fsh_avg += elapsed_t;
     total_elapsed_t += elapsed_t;
 

@@ -1,10 +1,9 @@
 #include "matrix_multiply.h"
 
-#define GPU_MAT_SIZE 256
 #define GPU_LOCAL_SIZE 8
-//#define PERIOD 20
-// 10Hz -> 100,50Hz -> 20, 100Hz -> 10
-//#define need_period
+#define GPU_MAT_SIZE 256
+#define need_period
+// #define dynamic_period
 //  512 (512/16 = 32, 0.66031650083s) (512/8 = 64, 0.11224315321s)->4.196719s
 //  (512/2=256, 0.30318202489s) 256 (256/16 = 16, 0.01193838276s) (256/8 = 32,
 //  0.01371627267s)->1.047494s (256/1=256, 0.04231647603s) 128 (128/16 = 8 ,
@@ -21,6 +20,14 @@ const char* kernelSource = R"(
         C[i*N + j] = acc;
     }
 )";
+
+bool m_break = false;
+
+void  INThandler(int sig)
+{
+  signal(sig, SIG_IGN);
+  m_break = true;
+}
 
 Workload::Workload(){};
 
@@ -48,7 +55,7 @@ Workload::Workload(int duration, int gpu) {
 
   clock_gettime(CLOCK_MONOTONIC, &begin);
   double elepsed_t = 0;
-  while (elepsed_t < duration) {
+  while (elepsed_t < duration && !m_break) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     clock_gettime(CLOCK_MONOTONIC, &end);
     elepsed_t = (end.tv_sec - begin.tv_sec) +
@@ -58,7 +65,6 @@ Workload::Workload(int duration, int gpu) {
             << "\n";
   stop = true;
   for (auto& workers : gpu_workload_pool) workers.join();
-  for (auto& workers : cpu_workload_pool) workers.join();
   std::cout << "Dummy workload end"
             << "\n";
 }
@@ -77,12 +83,15 @@ void CPU_multipy(std::vector<float> matA, std::vector<float> matB) {
   }
 }
 
+
+
 void Workload::GPU_Worker() {
-  int count = 1;
-  double elapsed_t, total_elapsed_t = 0;
+  int count = 0;
+  double elapsed_t, total_elapsed_t = 0, cpt_avg = 0, run_avg = 0, cpf_avg = 0,
+                    fsh_avg = 0;
   struct timespec begin, end;
   int idx;
-  std::string file_name = "latency.txt";
+  std::vector<float> log;
 
   // Set up OpenCL context, device, and queue
   std::vector<cl::Platform> platforms;
@@ -115,10 +124,9 @@ void Workload::GPU_Worker() {
   for (int i = 0; i < matrixElements; ++i) {
     matrixA[i] = static_cast<float>(i);
     matrixB[i] = static_cast<float>(i + matrixElements);
-    resultMatrix[i] = static_cast<float>(0);
   }
 
-  CPU_multipy(matrixA, matrixB);
+  // CPU_multipy(matrixA, matrixB);
   // For verification
   // for (int i = 0; i < matrixElements; i++) {
   //   if (i % GPU_MAT_SIZE == 0) std::cout << "\n";
@@ -168,73 +176,85 @@ void Workload::GPU_Worker() {
   }
   // Launch kernel and measure execution time
 
+  int period[8] = {0, 10, 15, 20, 30, 50, 70, 100};
+  int util[8] = {100, 58, 47, 41, 32, 22, 16, 11};
+  signal(SIGINT, INThandler);
+  std::ofstream outfile;
   while (!stop) {
+    int n = 1; // have to change period[i]
+    
+    if(m_break) break;
+  #ifdef dynamic_period // if you want to run dynamic workload
+    srand(time(NULL));
+    n = rand()%8;
+  #endif
+    int PERIOD = period[n];
+    outfile.open("gpu_0", std::ios::out | std::ios::trunc); 
+    if (!outfile.is_open()) {
+      std::cerr << "Failed to open" << std::endl;
+      return;
+    }
+    outfile << util[n] << "\n";
+    outfile.close();
+    
     cl::Event* event;
+
     if (event == nullptr) {
       event = new cl::Event();
     }
+    // clock_gettime(CLOCK_MONOTONIC, &begin);
     void* mapped_ptr_A = queue.enqueueMapBuffer(
         bufferA, CL_TRUE, CL_MAP_WRITE, 0, sizeof(float) * matrixElements);
     void* mapped_ptr_B = queue.enqueueMapBuffer(
         bufferB, CL_TRUE, CL_MAP_WRITE, 0, sizeof(float) * matrixElements);
+    // clock_gettime(CLOCK_MONOTONIC, &end);
+    // elapsed_t = (end.tv_sec - begin.tv_sec) +
+    //             ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
+    // total_elapsed_t += elapsed_t;
 
 #ifdef need_period
     std::this_thread::sleep_for(std::chrono::milliseconds(PERIOD));
 #endif
     clock_gettime(CLOCK_MONOTONIC, &begin);
-    // work-group size = global work-items / local work-items
-    // Max work group size: 256
-    // Max global, local work item sizes : 256
-    // Preferred Work group size multiple(배수) : 4
-
     queue.enqueueNDRangeKernel(
         kernel, cl::NullRange, cl::NDRange(GPU_MAT_SIZE, GPU_MAT_SIZE),
         cl::NDRange(GPU_LOCAL_SIZE, GPU_LOCAL_SIZE), NULL, event);
+
     queue.finish();
     clock_gettime(CLOCK_MONOTONIC, &end);
     elapsed_t = (end.tv_sec - begin.tv_sec) +
                 ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
     total_elapsed_t += elapsed_t;
-    printf("%d's time: %.11f\n", count, elapsed_t);
+
+    // clock_gettime(CLOCK_MONOTONIC, &begin);
     queue.enqueueReadBuffer(bufferResult, CL_TRUE, 0,
                             sizeof(float) * matrixElements,
                             resultMatrix.data());
+    // clock_gettime(CLOCK_MONOTONIC, &end);
+    // elapsed_t = (end.tv_sec - begin.tv_sec) +
+    //             ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
+    // total_elapsed_t += elapsed_t;
 
     // // 매핑 해제
+    // clock_gettime(CLOCK_MONOTONIC, &begin);
     queue.enqueueUnmapMemObject(bufferA, mapped_ptr_A);
     queue.enqueueUnmapMemObject(bufferB, mapped_ptr_B);
-
-    // For Verification
-    // std::cout << std::fixed;
-    // std::cout << std::setprecision(0);
-    // for (int i = 0; i < matrixElements; i++) {
-    //   if (i % GPU_MAT_SIZE == 0) std::cout << "\n";
-    //   std::cout << resultMatrix[i] << " ";
-    // }
-    // std::cout << "\n";
-    // for (idx = 0; idx < GPU_MAT_SIZE; idx++) {
-    //  if (matC[idx] != resultMatrix[idx]) {
-    //    printf("Verification failed!\n");
-    //    break;
-    //  }
-    //}
-    std::ofstream outfile(file_name);
-
-    if (!outfile.is_open()) {
-      std::cerr << "Failed to open " << file_name << std::endl;
-      return;
-    }
-
-    outfile << std::fixed << std::setprecision(11);
-    outfile << elapsed_t;
-    // outfile << std::endl;
+    // clock_gettime(CLOCK_MONOTONIC, &end);
+    // elapsed_t = (end.tv_sec - begin.tv_sec) +
+    //             ((end.tv_nsec - begin.tv_nsec) / 1000000000.0);
+    // total_elapsed_t += elapsed_t;
+    printf("%d %.11f\n", count, total_elapsed_t);
     count++;
+    total_elapsed_t = 0;
   }
-  printf("%d's average time: %.11f\n", count - 1,
-         total_elapsed_t / (count - 1));
-  if (idx == GPU_MAT_SIZE) {
-    printf("Verification success!\n");
+  
+  outfile.open("gpu_0", std::ios::out | std::ios::trunc);
+  if (!outfile.is_open()) {
+    std::cerr << "Failed to open" << std::endl;
+    return;
   }
+  outfile << 0 << "\n";
+  outfile.close();
 }
 
 Workload::~Workload(){};

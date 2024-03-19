@@ -2,13 +2,13 @@ CC := g++
 CFLAGS := -std=c++11 -Wall -Wextra -I/usr/include
 LDFLAGS := -L/usr/lib -lpthread -lOpenCL
 
-SRCS := matrix_multiply.cpp main.cpp
+SRCS := log_latency.cpp main.cpp
 OBJS := $(SRCS:.cpp=.o)
-EXEC := matrix_multiply
+EXEC := log_latency
 
 .PHONY: all clean
 
-matrix: $(EXEC)
+log: $(EXEC)
 
 $(EXEC): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
